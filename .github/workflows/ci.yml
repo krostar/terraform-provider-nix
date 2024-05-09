@@ -1,0 +1,72 @@
+---
+
+name: "CI"
+on:
+  pull_request:
+    branches: ["main"]
+    paths-ignore:
+      - "README.md"
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "README.md"
+
+jobs:
+  test:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4.1.4"
+      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/cachix-action@v14"
+        with:
+          name: "krostar"
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: "Check flake"
+        run: "nix flake check"
+      - name: "Setup shell"
+        run: "nix develop --command true"
+      - name: "Build plugin binary"
+        run: "nix develop --command go build -v ."
+      - name: "Run go unit tests"
+        run: "nix develop --command go test -v -race -count=1 ./..."
+
+  lint:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4.1.4"
+      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/cachix-action@v14"
+        with:
+          name: "krostar"
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: "Setup shell"
+        run: "nix develop --command true"
+      - name: "Lint nix files"
+        run: "nix develop --command ./scripts/lint-nix.sh"
+      - name: "Lint shell files"
+        run: "nix develop --command shellcheck **/*.sh"
+      - name: "Lint yaml files"
+        run: "nix develop --command yamllint --config-file .yamllint.yml ."
+      - name: "Lint go files"
+        run: "nix develop --command ./scripts/lint-go.sh"
+
+  generate:
+    runs-on: "ubuntu-latest"
+    steps:
+      - uses: "actions/checkout@v4.1.4"
+      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/cachix-action@v14"
+        with:
+          name: "krostar"
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: "Setup shell"
+        run: "nix develop --command true"
+      - name: "Generate documentation"
+        run: "go generate ./..."
+      - name: "git diff"
+        run: |
+          git diff --compact-summary --exit-code || \
+            (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
+
+
+...
