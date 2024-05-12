@@ -48,7 +48,7 @@ func (f *systemToAMIArchitectureFunction) Run(ctx context.Context, req function.
 		return
 	}
 
-	nixArchitecture := strings.SplitN(nixSystem, "-", 1)[0]
+	nixArchitecture := strings.SplitN(nixSystem, "-", 2)[0]
 	amiArchitecture, ok := f.nixArchitectureToAMIArchitecture[nixArchitecture]
 	if !ok {
 		resp.Error = function.NewFuncError(fmt.Sprintf("Unable to map nix architecture %s to an AMI architecture", nixArchitecture))
