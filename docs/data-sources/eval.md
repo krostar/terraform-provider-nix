@@ -14,7 +14,7 @@ Evaluate nix expressions.
 
 ```terraform
 data "nix_eval" "this" {
-  installable = "${flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon")}.config.services.openssh.port"
+  installable = provider::nix::flake_nixos_configuration(path.module, "awesomeHost", "services.openssh.ports")
   apply       = "builtins.head"
 }
 ```
@@ -28,7 +28,7 @@ data "nix_eval" "this" {
 
 ### Optional
 
-- `apply` (Boolean) Nix function to apply on expression result.
+- `apply` (String) Nix function to apply on expression result.
 
 ### Read-Only
 

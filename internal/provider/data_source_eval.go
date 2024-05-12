@@ -34,7 +34,7 @@ func (*dataSourceEval) Schema(_ context.Context, _ datasource.SchemaRequest, res
 				MarkdownDescription: "Nix installable (store path, nix packages, flake attribute, nix expressions, ...).",
 				Required:            true,
 			},
-			"apply": schema.BoolAttribute{
+			"apply": schema.StringAttribute{
 				MarkdownDescription: "Nix function to apply on expression result.",
 				Optional:            true,
 			},

@@ -1,4 +1,4 @@
 data "nix_eval" "this" {
-  installable = "${flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon")}.config.services.openssh.port"
+  installable = provider::nix::flake_nixos_configuration(path.module, "awesomeHost", "services.openssh.ports")
   apply       = "builtins.head"
 }
