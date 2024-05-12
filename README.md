@@ -8,12 +8,18 @@
 
 This module exposes two resources:
 
-- `nix_derivation`: build a nix installable and get built paths
-- `nix_copy_store_path`: copy a nix store path from one store to another
+- `nix_store_path`: build a nix installable and get built store paths
+- `nix_store_path_copy`: perform a copy a of nix store path from one store to another
 
-and one data source:
+two data sources:
 
-- `nix_store_path`: retrive nix store path information
+- `nix_derivation`: retrieve nix derivation information
+- `nix_eval`: retrieve value from nix
+
+two functions:
+
+- `derivation_system_to_ami_architecture`: maps nix system to ami architecture
+- `flake_nixos_configuration`: construct a flake based nixos configuration installable name 
 
 ### How can I use this provider ?
 
@@ -21,7 +27,10 @@ The following example uses flakes, but you don't have to.
 
 #### flake
 
-Create a file named `flake.nix` with the following demo content:
+For demonstration purpose:
+- `mkdir demo && cd demo` -> create a demo directory 
+- `git init` initialize an empty git repository
+-  `git add` a file named `flake.nix` with the following content:
 
 ```nix
 # ./flake.nix
@@ -43,6 +52,7 @@ Create a file named `flake.nix` with the following demo content:
       modules = [
         nixos-generators.nixosModules.all-formats
         {
+          formatConfigs.amazon.amazonImage.sizeMB = 4 * 1024;
           system.stateVersion = "24.05";
           nixpkgs.hostPlatform = "aarch64-linux";
         }
@@ -73,7 +83,7 @@ That's it for the nix/flake part, we could build this derivation manually, but l
 
 #### terraform
 
-In the same directory as the `flake.nix` file above, lets create a `main.tf` file with the following content:
+In the same directory, create a `main.tf` file with the following content:
 
 ```terraform
 # ./main.tf
@@ -87,35 +97,35 @@ terraform {
 
 provider "nix" {}
 
-resource "nix_derivation" "awesome_host" {
-  installable = "${path.module}#nixosConfigurations.awesomeHost.config.formats.amazon"
+resource "nix_store_path" "awesome_host" {
+  installable = flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon")
 }
 
-data "nix_store_path" "awesome_host" {
-  installable = nix_derivation.awesome_host.output_path
+data "nix_derivation" "awesome_host" {
+  installable = nix_store_path.awesome_host.drv_path
 }
 
-data "nix_store_path" "another_host" {
-  installable = "${path.module}#nixosConfigurations.anotherHost.config.formats.amazon"
+data "nix_derivation" "another_host" {
+  installable = flake_nixos_configuration(path.module, "anotherHost", "formats.amazon")
 }
 
 output "from_resource" {
-  value = nix_derivation.awesome_host
+  value = nix_store_path.awesome_host
 }
 
 output "from_data_another_host" {
-  value = data.nix_store_path.another_host
+  value = data.nix_derivation.another_host
 }
 
 output "from_data_awesome_host" {
-  value = data.nix_store_path.awesome_host
+  value = data.nix_derivation.awesome_host
 }
 ```
 
 In this file:
 - the `provider "nix"` terraform provider is defined and configured, it will be used to glue nix and terraform together
-- the `data "nix_store_path"` allow us to retrieve some information about nix store paths
-- the `resource "nix_derivation" "awesome_host"` allow us to build the derivation, and retrieve information about it
+- the `data "nix_derivation"` allow us to retrieve some information about nix derivation
+- the `resource "nix_store_path" "awesome_host"` allow us to build the derivation, and retrieve information about it
 - and then output all data and resource information
 
 #### Actions!
@@ -131,10 +141,10 @@ You should now be able to ask terraform for a plan:
 
 ```sh
 $ terraform plan
-data.nix_store_path.another_host: Reading...
-data.nix_store_path.another_host: Still reading... [10s elapsed]
-data.nix_store_path.another_host: Still reading... [20s elapsed]
-data.nix_store_path.another_host: Read complete after 20s
+data.nix_derivation.another_host: Reading...
+data.nix_derivation.another_host: Still reading... [10s elapsed]
+data.nix_derivation.another_host: Still reading... [20s elapsed]
+data.nix_derivation.another_host: Read complete after 28s
 
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   + create
@@ -142,64 +152,66 @@ Terraform used the selected providers to generate the following execution plan. 
 
 Terraform will perform the following actions:
 
-  # data.nix_store_path.awesome_host will be read during apply
+  # data.nix_derivation.awesome_host will be read during apply
   # (config refers to values not yet known)
- <= data "nix_store_path" "awesome_host" {
+ <= data "nix_derivation" "awesome_host" {
       + drv_path    = (known after apply)
       + installable = (known after apply)
       + output_path = (known after apply)
-      + valid       = (known after apply)
+      + system      = (known after apply)
     }
 
-  # nix_derivation.awesome_host will be created
-  + resource "nix_derivation" "awesome_host" {
+  # nix_store_path.awesome_host will be created
+  + resource "nix_store_path" "awesome_host" {
       + drv_path    = (known after apply)
-      + installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
+      + installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
       + output_path = (known after apply)
+      + system      = (known after apply)
     }
 
 Plan: 1 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
   + from_data_another_host = {
-      + drv_path    = "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-      + installable = ".#nixosConfigurations.anotherHost.config.formats.amazon"
-      + output_path = "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      + valid       = false
+      + drv_path    = "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      + installable = ".#'nixosConfigurations.\"anotherHost\".config.formats.amazon'"
+      + output_path = "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+      + system      = "aarch64-linux"
     }
   + from_data_awesome_host = {
       + drv_path    = (known after apply)
       + installable = (known after apply)
       + output_path = (known after apply)
-      + valid       = (known after apply)
+      + system      = (known after apply)
     }
   + from_resource          = {
       + drv_path    = (known after apply)
-      + installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
+      + installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
       + output_path = (known after apply)
+      + system      = (known after apply)
     }
 
-────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 Note: You didn't use the -out option to save this plan, so Terraform can't guarantee to take exactly these actions if you run "terraform apply" now.
 ```
 
-here you see that the `resource "nix_derivation" "awesome_host"` will be created (installable will be built) if applied, and associated data are yet to be known.
-Meanwhile, the `data "nix_store_path" "another_host"` is already capable of giving the derivation path (`drv_path`) and build output path `output_path`, without building the installable.
+here you see that the `resource "nix_store_path" "awesome_host"` will be created (installable will be built) if applied, and associated data are yet to be known.
+Meanwhile, the `data "nix_derivation" "another_host"` is already capable of giving the derivation path (`drv_path`) and build output path `output_path`, without building the installable.
 This data is already accessible without building the derivation because nix derivation path and output path are computed based on nix inputs, see [how nix store path works](https://nixos.org/guides/nix-pills/18-nix-store-paths.html).
-Because the derivation is not built, the nix store do not contain the derivation nor the build output, that is why it is considered invalid (`valid = false`).
+Because the derivation is not built, the nix store do not contain the derivation nor the build output.
 
-This is the main difference between `nix_store_path` **data** and `nix_derivation` **resource**. The former ask nix for the derivation information
+This is the main difference between `nix_derivation` **data** and `nix_store_path` **resource**. The former ask nix for the derivation information
 (which evaluate the nix expression behind the flake installable, but does not build it), and the latter that builds it.
 
 Let's apply this plan:
 
 ```sh
 $ terraform apply
-data.nix_store_path.another_host: Reading...
-data.nix_store_path.another_host: Still reading... [10s elapsed]
-data.nix_store_path.another_host: Still reading... [20s elapsed]
-data.nix_store_path.another_host: Read complete after 21s
+data.nix_derivation.another_host: Reading...
+data.nix_derivation.another_host: Still reading... [10s elapsed]
+data.nix_derivation.another_host: Still reading... [20s elapsed]
+data.nix_derivation.another_host: Read complete after 26s
 
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   + create
@@ -207,41 +219,42 @@ Terraform used the selected providers to generate the following execution plan. 
 
 Terraform will perform the following actions:
 
-  # data.nix_store_path.awesome_host will be read during apply
+  # data.nix_derivation.awesome_host will be read during apply
   # (config refers to values not yet known)
- <= data "nix_store_path" "awesome_host" {
+ <= data "nix_derivation" "awesome_host" {
       + drv_path    = (known after apply)
       + installable = (known after apply)
       + output_path = (known after apply)
-      + valid       = (known after apply)
+      + system      = (known after apply)
     }
 
-  # nix_derivation.awesome_host will be created
-  + resource "nix_derivation" "awesome_host" {
+  # nix_store_path.awesome_host will be created
+  + resource "nix_store_path" "awesome_host" {
       + drv_path    = (known after apply)
-      + installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
+      + installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
       + output_path = (known after apply)
+      + system      = (known after apply)
     }
 
 Plan: 1 to add, 0 to change, 0 to destroy.
 
 Changes to Outputs:
-  + from_data_another_host = {
-      + drv_path    = "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-      + installable = ".#nixosConfigurations.anotherHost.config.formats.amazon"
-      + output_path = "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      + valid       = false
+  ~ from_data_another_host = {
+      ~ drv_path    = "/nix/store/jqjw6gm06aifn20qa5fgbhbpkv97ps3k-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv" -> "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      ~ output_path = "/nix/store/pri55fj97v6mm8p1x3wnz6lxbxkdvy63-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd" -> "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+        # (2 unchanged attributes hidden)
     }
   + from_data_awesome_host = {
       + drv_path    = (known after apply)
       + installable = (known after apply)
       + output_path = (known after apply)
-      + valid       = (known after apply)
+      + system      = (known after apply)
     }
   + from_resource          = {
       + drv_path    = (known after apply)
-      + installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
+      + installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
       + output_path = (known after apply)
+      + system      = (known after apply)
     }
 
 Do you want to perform these actions?
@@ -250,55 +263,71 @@ Do you want to perform these actions?
 
   Enter a value: yes
 
-nix_derivation.awesome_host: Creating...
-nix_derivation.awesome_host: Still creating... [10s elapsed]
-nix_derivation.awesome_host: Still creating... [20s elapsed]
-nix_derivation.awesome_host: Creation complete after 21s
-data.nix_store_path.awesome_host: Reading...
-data.nix_store_path.awesome_host: Read complete after 0s
+nix_store_path.awesome_host: Creating...
+nix_store_path.awesome_host: Still creating... [10s elapsed]
+nix_store_path.awesome_host: Still creating... [20s elapsed]
+nix_store_path.awesome_host: Still creating... [30s elapsed]
+nix_store_path.awesome_host: Still creating... [40s elapsed]
+nix_store_path.awesome_host: Still creating... [50s elapsed]
+nix_store_path.awesome_host: Still creating... [1m0s elapsed]
+nix_store_path.awesome_host: Still creating... [1m10s elapsed]
+nix_store_path.awesome_host: Still creating... [1m20s elapsed]
+nix_store_path.awesome_host: Still creating... [1m30s elapsed]
+nix_store_path.awesome_host: Still creating... [1m40s elapsed]
+nix_store_path.awesome_host: Still creating... [1m50s elapsed]
+nix_store_path.awesome_host: Still creating... [2m0s elapsed]
+nix_store_path.awesome_host: Still creating... [2m10s elapsed]
+nix_store_path.awesome_host: Still creating... [2m20s elapsed]
+nix_store_path.awesome_host: Still creating... [2m30s elapsed]
+nix_store_path.awesome_host: Still creating... [2m40s elapsed]
+nix_store_path.awesome_host: Still creating... [2m50s elapsed]
+nix_store_path.awesome_host: Still creating... [3m0s elapsed]
+nix_store_path.awesome_host: Still creating... [3m10s elapsed]
+nix_store_path.awesome_host: Still creating... [3m20s elapsed]
+nix_store_path.awesome_host: Still creating... [3m30s elapsed]
+nix_store_path.awesome_host: Creation complete after 3m36s
+data.nix_derivation.awesome_host: Reading...
+data.nix_derivation.awesome_host: Read complete after 0s
 
 Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 
 Outputs:
 
 from_data_another_host = {
-  "drv_path" = "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = ".#nixosConfigurations.anotherHost.config.formats.amazon"
-  "output_path" = "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "valid" = false
+  "drv_path" = "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = ".#'nixosConfigurations.\"anotherHost\".config.formats.amazon'"
+  "output_path" = "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 from_data_awesome_host = {
-  "drv_path" = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "output_path" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "valid" = true
+  "drv_path" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "output_path" = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 from_resource = {
-  "drv_path" = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
-  "output_path" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
+  "drv_path" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
+  "output_path" = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 ```
 
 As expected, `drv_path` and `output_path` for `from_data_awesome_host` and `from_resource` are equal, we are indeed building the same derivation.
-The real difference is that because the derivation is actually built it is `valid`, we can provide other modules with its output.
+The real difference is that because the derivation is actually built, we can provide other modules with its output.
 
-Note: If we manually build the `from_data_another_host` derivation via nix build, `valid` would also be true.
+Note: If we manually build the `from_data_another_host` derivation via nix build, the store path will also exists.
 The issue is that it's up to the nix store to keep this store path alive, if garbage collection happens between nix build and terraform apply then the store path becomes invalid.
 That is not the case with the resource definition, if the store path is missing, it will be built again.
 
 If we run terraform apply again:
 ```sh
-data.nix_store_path.another_host: Reading...
-nix_derivation.awesome_host: Refreshing state...
-data.nix_store_path.another_host: Still reading... [10s elapsed]
-data.nix_store_path.another_host: Still reading... [20s elapsed]
-data.nix_store_path.another_host: Still reading... [30s elapsed]
-data.nix_store_path.another_host: Still reading... [40s elapsed]
-data.nix_store_path.another_host: Still reading... [50s elapsed]
-data.nix_store_path.another_host: Read complete after 51s
-data.nix_store_path.awesome_host: Reading...
-data.nix_store_path.awesome_host: Read complete after 0s
+$ terraform apply
+nix_store_path.awesome_host: Refreshing state...
+data.nix_derivation.another_host: Reading...
+data.nix_derivation.another_host: Read complete after 0s
+data.nix_derivation.awesome_host: Reading...
+data.nix_derivation.awesome_host: Read complete after 0s
 
 No changes. Your infrastructure matches the configuration.
 
@@ -309,21 +338,22 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
 Outputs:
 
 from_data_another_host = {
-  "drv_path" = "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = ".#nixosConfigurations.anotherHost.config.formats.amazon"
-  "output_path" = "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "valid" = false
+  "drv_path" = "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = ".#'nixosConfigurations.\"anotherHost\".config.formats.amazon'"
+  "output_path" = "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 from_data_awesome_host = {
-  "drv_path" = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "output_path" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-  "valid" = true
+  "drv_path" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "output_path" = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 from_resource = {
-  "drv_path" = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-  "installable" = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
-  "output_path" = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
+  "drv_path" = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+  "installable" = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
+  "output_path" = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+  "system" = "aarch64-linux"
 }
 ```
 
@@ -333,48 +363,45 @@ Lets now perform a terraform destroy:
 
 ```sh
 $ terraform destroy
-data.nix_store_path.another_host: Reading...
-nix_derivation.awesome_host: Refreshing state...
-data.nix_store_path.another_host: Still reading... [10s elapsed]
-data.nix_store_path.another_host: Still reading... [20s elapsed]
-data.nix_store_path.another_host: Still reading... [30s elapsed]
-data.nix_store_path.awesome_host: Reading...
-data.nix_store_path.awesome_host: Read complete after 0s
-data.nix_store_path.another_host: Still reading... [40s elapsed]
-data.nix_store_path.another_host: Still reading... [50s elapsed]
-data.nix_store_path.another_host: Read complete after 50s
+nix_store_path.awesome_host: Refreshing state...
+data.nix_derivation.another_host: Reading...
+data.nix_derivation.another_host: Read complete after 0s
+data.nix_derivation.awesome_host: Reading...
+data.nix_derivation.awesome_host: Read complete after 1s
 
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   - destroy
 
 Terraform will perform the following actions:
 
-  # nix_derivation.awesome_host will be destroyed
-  - resource "nix_derivation" "awesome_host" {
-      - drv_path    = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv" -> null
-      - installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon" -> null
-      - output_path = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd" -> null
+  # nix_store_path.awesome_host will be destroyed
+  - resource "nix_store_path" "awesome_host" {
+      - drv_path    = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv" -> null
+      - installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'" -> null
+      - output_path = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd" -> null
+      - system      = "aarch64-linux" -> null
     }
 
 Plan: 0 to add, 0 to change, 1 to destroy.
 
 Changes to Outputs:
   - from_data_another_host = {
-      - drv_path    = "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-      - installable = ".#nixosConfigurations.anotherHost.config.formats.amazon"
-      - output_path = "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      - valid       = false
+      - drv_path    = "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      - installable = ".#'nixosConfigurations.\"anotherHost\".config.formats.amazon'"
+      - output_path = "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+      - system      = "aarch64-linux"
     } -> null
   - from_data_awesome_host = {
-      - drv_path    = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-      - installable = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      - output_path = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      - valid       = true
+      - drv_path    = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      - installable = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      - output_path = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+      - system      = "aarch64-linux"
     } -> null
   - from_resource          = {
-      - drv_path    = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-      - installable = ".#nixosConfigurations.awesomeHost.config.formats.amazon"
-      - output_path = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
+      - drv_path    = "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      - installable = ".#'nixosConfigurations.\"awesomeHost\".config.formats.amazon'"
+      - output_path = "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+      - system      = "aarch64-linux"
     } -> null
 
 Do you really want to destroy all resources?
@@ -383,42 +410,29 @@ Do you really want to destroy all resources?
 
   Enter a value: yes
 
-nix_derivation.awesome_host: Destroying...
-nix_derivation.awesome_host: Destruction complete after 1s
+nix_store_path.awesome_host: Destroying...
+nix_store_path.awesome_host: Destruction complete after 0s
 ╷
-│ Warning: Delete operation may not remove garbage
+│ Warning: Delete operation is no-op for this provider.
 │
-│ See https://nixos.org/manual/nix/stable/command-ref/nix-collect-garbage and run nix-collect-garbage if needed
+│ Delete operation may have consequences out of the scope of this plan. Use nix-collect-garbage if needed.
 ╵
 
 Destroy complete! Resources: 1 destroyed.
 ```
 
 Nice!
-If we ask nix for the store path info:
-
-```sh
-nix path-info .#nixosConfigurations.awesomeHost.config.formats.amazon
-this derivation will be built:
-  /nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv
-error: path '/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd' is not valid
-```
-
-as expected its missing.
-
 You may have seen this notice above:
 ```
 ╷
-│ Warning: Delete operation may not remove garbage
+│ Warning: Delete operation is no-op for this provider.
 │
-│ See https://nixos.org/manual/nix/stable/command-ref/nix-collect-garbage and run nix-collect-garbage if needed
+│ Delete operation may have consequences out of the scope of this plan. Use nix-collect-garbage if needed.
 ╵
 ```
 
-While we successfully removed the store path, all the build dependencies are still in the nix store.
-Actually, rebuilding the derivation may even be near-instant, as nix would probably have all build dependencies still in the store.
-
-Cleaning garbage (unused dependencies) is out of scope of this terraform provider, as it may have other consequences.
+As stated, cleaning store-paths may have consequences outside of terraform.
+Cleaning garbage (unused built store-path and unused build dependencies) is out of scope of this terraform provider.
 Consider running nix-collect-garbage manually, or set nix to automatically clean garbage when needed.
 
 ### How does it work ?
@@ -428,30 +442,30 @@ This means you need to have `bash` and `nix` in your `PATH` to run it.
 
 For reproducibility reasons, consider providing bash, terraform, and nix through a nix shell.
 
-Here are all the commands ran for the example above (not in order, and not considering the number of executions):
+Here are all the commands ran by this provider:
 ```sh
-nix build --no-update-lock-file --no-write-lock-file --no-link --json .#nixosConfigurations.awesomeHost.config.formats.amazon
-nix derivation show --no-update-lock-file --no-write-lock-file .#nixosConfigurations.anotherHost.config.formats.amazon
-nix path-info --no-update-lock-file --no-write-lock-file --json .#nixosConfigurations.anotherHost.config.formats.amazon
-nix path-info --no-update-lock-file --no-write-lock-file --json .#nixosConfigurations.awesomeHost.config.formats.amazon
-nix path-info --no-update-lock-file --no-write-lock-file --json /nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd
-nix store delete --no-update-lock-file --no-write-lock-file /nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd
+nix build
+nix copy
+nix derivation show
+nix eval
+nix path-info
 ```
 
-### "nix_derivation.*: Refreshing state..." is super slow!
+### "nix_store_path: Refreshing state..." is super slow!
 
-`resource "nix_derivation"` creation requires to actually call `nix build` with the provided installable.
+`resource "nix_store_path"` creation requires to actually call `nix build` with the provided installable.
 
 After creation (when applying an already created resource), the provider checks with `nix path-info` if the store path is still valid:
-- if it is, it returns the store path
+- if it is, it returns the derivation description already built
 - if it's not, it `nix build` the installable again
 
-This is required to ensure the output exists, even in case of nix garbage collection, this also means the store path can change due to modification outside terraform (like changing something nix-side), see *Note: Objects have changed outside of Terraform* below.
+This is required to ensure the output exists, even in case of nix garbage collection,
+this also means the store path can change due to modification outside terraform (like changing something nix-side),
+see *Note: Objects have changed outside of Terraform* below.
 
 Once an installable is built, considering nothing changed nix-side, rebuilding the same derivation should be near instant.
 
-`data "nix_derivation"` requires to evaluate the nix expressions to compute the derivation, without actually building it.
-It may or not be faster in some occasion. 
+`data "nix_derivation"` requires to evaluate the nix expressions to evaluate nix code to build the derivation.
 
 ### Note: Objects have changed outside of Terraform
 
@@ -460,61 +474,46 @@ terraform will notice it.
 
 ```sh
 $ terraform plan
-nix_derivation.this: Refreshing state...
-
-
-Note: Objects have changed outside of Terraform
-
-Terraform detected the following changes made outside of Terraform since the last "terraform apply" which may have affected this plan:
-
-  # nix_derivation.this has changed
-  ~ resource "nix_derivation" "this" {
-      ~ output      = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd" -> "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      ~ path        = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv" -> "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-        # (1 unchanged attribute hidden)
-    }
-
-
-Unless you have made equivalent changes to your configuration, or ignored the relevant attributes using ignore_changes, the following plan may include actions to undo or respond to
-these changes.
-
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+nix_store_path.awesome_host: Refreshing state...
+data.nix_derivation.another_host: Reading...
+data.nix_derivation.another_host: Read complete after 0s
+data.nix_derivation.awesome_host: Reading...
+data.nix_derivation.awesome_host: Read complete after 0s
 
 Changes to Outputs:
-  ~ resource_awesome_host = {
-      ~ output      = "/nix/store/z0i2hszffgz5fbv4am26yij7pik8czkd-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd" -> "/nix/store/7ajhwdh23iw4c4ipcz3mzyq3xg1w5r38-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd"
-      ~ path        = "/nix/store/5ikkddmwwd05hirqyj86mlvrinmydj3v-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv" -> "/nix/store/fvsifqg9picsl78132wqql5lm3dam6wb-nixos-amazon-image-24.05.20240505.25865a4-aarch64-linux.vhd.drv"
-        # (1 unchanged attribute hidden)
+  ~ from_data_another_host = {
+      ~ drv_path    = "/nix/store/zkkcwad2dcm9zl45q4va1fi8bsfmzi2m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv" -> "/nix/store/g1y6hxdqg0gj906x9hljwdji3mb77vcd-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd.drv"
+      ~ output_path = "/nix/store/nwrdplz0mzyi3fzlndvf5ixmn0s9jf1m-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd" -> "/nix/store/g9yfnibjgh633iw4d226cgzs8z2q30yh-nixos-amazon-image-24.05.20240511.062ca2a-aarch64-linux.vhd"
+        # (2 unchanged attributes hidden)
     }
 
 You can apply this plan to save these new output values to the Terraform state, without changing any real infrastructure.
 
-──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-Note: You didn't use the -out option to save this plan, so Terraform can't guarantee to take exactly these actions if you run "terraform apply" now
+Note: You didn't use the -out option to save this plan, so Terraform can't guarantee to take exactly these actions if you run "terraform apply" now.
 ```
 
-It's up to you to decide how changes nix-side may impact the infrastructure.
 Changing something nix-side may imply recreating / updating some existing infrastructure.
-
+It's up to you to decide how changes nix-side should impact your infrastructure.
 
 ### How does this combine with other modules ?
 
-Use the `nix derivation` **resource** to do something in other module, like deploying a nixos system to amazon:
+Use the `nix_store_path` **resource** to do something in other module, like deploying a nixos system to amazon:
 
 ```terraform
 provider "nix" {}
 
-resource "nix_derivation" "awesome_host_vhd" {
-  installable = "${path.module}#nixosConfigurations.awesomeHost.config.formats.amazon"
+resource "nix_store_path" "awesome_host_vhd" {
+  installable = provider::nix::flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon")
 }
 
 resource "aws_s3_bucket" "nixos_ami" {}
 
 resource "aws_s3_object" "awesome_host_vhd" {
   bucket = aws_s3_bucket.nixos_ami.id
-  key = nix_derivation.awesome_host_vhd.output_path
-  source = nix_derivation.awesome_host.output
+  key = nix_store_path.awesome_host_vhd.output_path
+  source = nix_store_path.awesome_host_vhd.output
 }
 
 resource "aws_ebs_snapshot_import" "awesome_host" {
@@ -532,6 +531,7 @@ resource "aws_ami" "awesome_host" {
     device_name = "/dev/xvda"
     snapshot_id = aws_ebs_snapshot_import.awesome_host.id
   }
+  architecture = provider::nix::system_to_ami_architecture(nix_store_path.awesome_host_vhd.system)
 }
 
 resource "aws_instance" "awesome_host" {

@@ -1,29 +1,45 @@
 package nix
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // Nix exposes ways to interact with nix.
 type Nix interface {
-	// IsBuilt checks whenever a store path is valid and returns it.
-	IsBuilt(ctx context.Context, installable string) (bool, *StorePath, error)
-
-	// Derivation query information about store paths.
-	Derivation(ctx context.Context, installable string) (*StorePath, error)
+	// EvaluateExpression evaluate a nix expression.
+	EvaluateExpression(ctx context.Context, req EvaluateRequest) (json.RawMessage, error)
 
 	// Build a derivation or fetch a store path.
 	Build(ctx context.Context, installable string) (*StorePath, error)
 
-	// Copy store path closures between two Nix stores.
-	Copy(ctx context.Context, req CopyRequest) error
+	// DescribeDerivation queries information about a store paths.
+	DescribeDerivation(ctx context.Context, installable string) (*Derivation, error)
 
-	// Delete paths from the Nix store.
-	Delete(ctx context.Context, installable string) error
+	// GetStorePath returns a store path and whenever it is valid.
+	GetStorePath(ctx context.Context, installable string) (bool, *StorePath, error)
+
+	// CopyStorePath copies store path closures between two Nix stores.
+	CopyStorePath(ctx context.Context, req CopyRequest) error
 }
 
-// StorePath defines the path on the filesystem, usually on /nix/store, of the derivation and its output.
+// StorePath defines the path on the filesystem, usually on /nix/store, of the derivation and its outputs.
 type StorePath struct {
 	Derivation string
 	Output     string
+}
+
+// Derivation description.
+type Derivation struct {
+	Name   string
+	Path   StorePath
+	System string
+}
+
+// EvaluateRequest is the input parameter provided to the EvaluateExpression of the Nix interface.
+type EvaluateRequest struct {
+	Installable string
+	Apply       *string
 }
 
 // CopyRequest is the input parameter provided to the Copy method of the Nix interface.

@@ -1,4 +1,5 @@
 /.direnv/
+/demo/
 *.dll
 *.exe
 .DS_Store

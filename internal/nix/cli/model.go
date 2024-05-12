@@ -1,5 +1,12 @@
 package nixcli
 
+import (
+	"cmp"
+	"slices"
+
+	"golang.org/x/exp/maps"
+)
+
 type cmdPathInfoOutput []cmdPathInfoOutputStorePath
 
 type cmdPathInfoOutputStorePath struct {
@@ -32,6 +39,24 @@ type cmdDerivationShowOutputDerivation struct {
 	System string `json:"system"`
 }
 
+func (o cmdDerivationShowOutputDerivation) outputPath() string {
+	if o.Outputs == nil {
+		return ""
+	}
+
+	if out, exists := o.Outputs["out"]; exists {
+		return out.Path
+	}
+
+	keys := maps.Keys(o.Outputs)
+	if len(keys) == 0 {
+		return ""
+	}
+
+	slices.SortStableFunc(keys, cmp.Compare[string])
+	return o.Outputs[keys[0]].Path
+}
+
 type cmdBuildDerivationOutput []cmdBuildDerivationOutputDerivation
 
 type cmdBuildDerivationOutputDerivation struct {
@@ -39,4 +64,22 @@ type cmdBuildDerivationOutputDerivation struct {
 	Outputs   map[string]string `json:"outputs"`
 	StartTime int               `json:"startTime"`
 	StopTime  int               `json:"stopTime"`
+}
+
+func (o cmdBuildDerivationOutputDerivation) outputPath() string {
+	if o.Outputs == nil {
+		return ""
+	}
+
+	if path, exists := o.Outputs["out"]; exists {
+		return path
+	}
+
+	keys := maps.Keys(o.Outputs)
+	if len(keys) == 0 {
+		return ""
+	}
+
+	slices.SortStableFunc(keys, cmp.Compare[string])
+	return o.Outputs[keys[0]]
 }

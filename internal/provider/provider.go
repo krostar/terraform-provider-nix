@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -49,10 +50,24 @@ func (*nixProvider) Configure(ctx context.Context, req provider.ConfigureRequest
 
 // Resources implements provider.Provider for terraform plugin framework.
 func (*nixProvider) Resources(context.Context) []func() resource.Resource {
-	return []func() resource.Resource{newResourceBuild, newResourceCopyStorePath}
+	return []func() resource.Resource{
+		newResourceStorePath,
+		newResourceStorePathCopy,
+	}
 }
 
 // DataSources implements provider.Provider for terraform plugin framework.
 func (*nixProvider) DataSources(context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{newDataSourceStorePath}
+	return []func() datasource.DataSource{
+		newDataSourceDerivation,
+		newDataSourceEval,
+	}
+}
+
+// Functions implements provider.ProviderWithFunctions for terraform plugin framework.
+func (*nixProvider) Functions(context.Context) []func() function.Function {
+	return []func() function.Function{
+		newFunctionFlakeNixosConfiguration,
+		newFunctionSystemToAMIArchitecture,
+	}
 }

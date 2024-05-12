@@ -43,9 +43,98 @@ func (CLI) runNixCmd(ctx context.Context, additionalEnv []string, subcommand str
 	return &stdOut, nil
 }
 
-// IsBuilt uses the "nix path-info" command to check whenever an installable derivation is built.
-// It returns true if the store path are valid.
-func (s CLI) IsBuilt(ctx context.Context, installable string) (bool, *nix.StorePath, error) {
+// EvaluateExpression evaluates nix expression and returns a json message.
+func (s CLI) EvaluateExpression(ctx context.Context, req nix.EvaluateRequest) (json.RawMessage, error) {
+	args := []string{req.Installable, "--json"}
+	if req.Apply != nil {
+		args = append(args, "--apply "+*req.Apply)
+	}
+
+	raw, err := s.runNixCmd(ctx, nil, "eval", args...)
+	if err != nil {
+		return nil, err
+	}
+
+	var msg json.RawMessage
+	if err := json.NewDecoder(raw).Decode(&msg); err != nil {
+		return nil, err
+	}
+
+	return msg, nil
+}
+
+// Build builds a nix installable using "nix build", and returns the associated store path.
+func (s CLI) Build(ctx context.Context, installable string) (*nix.StorePath, error) {
+	stdout, err := s.runNixCmd(ctx, nil, "build", "--no-link", "--json", installable)
+	if err != nil {
+		return nil, err
+	}
+
+	var derivation cmdBuildDerivationOutputDerivation
+	{
+		var derivations cmdBuildDerivationOutput
+		switch err := json.NewDecoder(stdout).Decode(&derivations); {
+		case err == nil && len(derivations) == 1:
+			for _, d := range derivations {
+				derivation = d
+			}
+		case err == nil && len(derivations) == 0:
+			return nil, fmt.Errorf("no derivation built for installable %q", installable)
+		case err == nil && len(derivations) > 1:
+			return nil, fmt.Errorf("unhandled: found more than one derivation for installable %q", installable)
+		default:
+			return nil, fmt.Errorf("unable to decode shell to stdout: %v", err)
+		}
+	}
+
+	return &nix.StorePath{
+		Derivation: derivation.DrvPath,
+		Output:     derivation.outputPath(),
+	}, nil
+}
+
+// DescribeDerivation returns the derivation store path based on an installable, using "nix derivation show" command.
+func (s CLI) DescribeDerivation(ctx context.Context, installable string) (*nix.Derivation, error) {
+	stdout, err := s.runNixCmd(ctx, nil, "derivation show", installable)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		derivation     cmdDerivationShowOutputDerivation
+		derivationPath string
+	)
+	{
+		var derivations cmdDerivationShowOutput
+		switch err := json.NewDecoder(stdout).Decode(&derivations); {
+		case err == nil && len(derivations) == 1:
+			for key, value := range derivations {
+				derivationPath = key
+				derivation = value
+			}
+
+		case err == nil && len(derivations) == 0:
+			return nil, fmt.Errorf("no store path provided for installable %q", installable)
+		case err == nil && len(derivations) > 1:
+			return nil, fmt.Errorf("found more than one store paths for installable %q", installable)
+		default:
+			return nil, fmt.Errorf("unable to decode command output: %v", err)
+		}
+	}
+
+	return &nix.Derivation{
+		Name: derivation.Name,
+		Path: nix.StorePath{
+			Derivation: derivationPath,
+			Output:     derivation.outputPath(),
+		},
+		System: derivation.System,
+	}, nil
+}
+
+// GetStorePath uses the "nix path-info" command to check nix store paths.
+// It returns true if the store paths are built.
+func (s CLI) GetStorePath(ctx context.Context, installable string) (bool, *nix.StorePath, error) {
 	stdout, err := s.runNixCmd(ctx, nil, "path-info", "--json", installable)
 	if err != nil {
 		return false, nil, err
@@ -72,85 +161,8 @@ func (s CLI) IsBuilt(ctx context.Context, installable string) (bool, *nix.StoreP
 	}, nil
 }
 
-// Derivation returns the derivation store path based on an installable, using "nix derivation show" command.
-func (s CLI) Derivation(ctx context.Context, installable string) (*nix.StorePath, error) {
-	stdout, err := s.runNixCmd(ctx, nil, "derivation show", installable)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		derivationPath string
-		outputPath     string
-	)
-	{
-		var derivations cmdDerivationShowOutput
-		switch err := json.NewDecoder(stdout).Decode(&derivations); {
-		case err == nil && len(derivations) == 1:
-			var derivation cmdDerivationShowOutputDerivation
-
-			for key, value := range derivations {
-				derivationPath = key
-				derivation = value
-			}
-
-			for _, value := range derivation.Outputs {
-				outputPath = value.Path
-			}
-
-		case err == nil && len(derivations) == 0:
-			return nil, fmt.Errorf("no store path provided for installable %q", installable)
-		case err == nil && len(derivations) > 1:
-			return nil, fmt.Errorf("found more than one store paths for installable %q", installable)
-		default:
-			return nil, fmt.Errorf("unable to decode command output: %v", err)
-		}
-	}
-
-	return &nix.StorePath{
-		Derivation: derivationPath,
-		Output:     outputPath,
-	}, nil
-}
-
-// Build builds a nix installable using "nix build", and returns the associated store path.
-func (s CLI) Build(ctx context.Context, installable string) (*nix.StorePath, error) {
-	stdout, err := s.runNixCmd(ctx, nil, "build", "--no-link", "--json", installable)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		derivation cmdBuildDerivationOutputDerivation
-		outputPath string
-	)
-	{
-		var derivations cmdBuildDerivationOutput
-		switch err := json.NewDecoder(stdout).Decode(&derivations); {
-		case err == nil && len(derivations) == 1:
-			for _, d := range derivations {
-				derivation = d
-			}
-			for _, value := range derivation.Outputs {
-				outputPath = value
-			}
-		case err == nil && len(derivations) == 0:
-			return nil, fmt.Errorf("no derivation built for installable %q", installable)
-		case err == nil && len(derivations) > 1:
-			return nil, fmt.Errorf("unhandled: found more than one derivation for installable %q", installable)
-		default:
-			return nil, fmt.Errorf("unable to decode shell to stdout: %v", err)
-		}
-	}
-
-	return &nix.StorePath{
-		Derivation: derivation.DrvPath,
-		Output:     outputPath,
-	}, nil
-}
-
-// Copy copies the provided nix store path from the provided nix store to the provided nix store.
-func (s CLI) Copy(ctx context.Context, req nix.CopyRequest) error {
+// CopyStorePath copies the provided nix store path from the provided nix store to the provided nix store.
+func (s CLI) CopyStorePath(ctx context.Context, req nix.CopyRequest) error {
 	args := []string{req.Installable}
 	if req.From != nil {
 		args = append(args, "--from "+*req.From)
@@ -171,11 +183,5 @@ func (s CLI) Copy(ctx context.Context, req nix.CopyRequest) error {
 	}
 
 	_, err := s.runNixCmd(ctx, env, "copy", args...)
-	return err
-}
-
-// Delete removes a store path from the nix store using "nix store delete".
-func (s CLI) Delete(ctx context.Context, installable string) error {
-	_, err := s.runNixCmd(ctx, nil, "store delete", installable)
 	return err
 }

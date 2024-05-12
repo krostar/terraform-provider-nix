@@ -8,16 +8,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/krostar/terraform-provider-nix/internal/nix"
 )
 
 type (
-	copyStorePathResource struct {
-		nix nix.Nix
-	}
-	copyStorePathResourceModel struct {
+	resourceStorePathCopy      struct{ nix nix.Nix }
+	resourceStorePathCopyModel struct {
 		StorePath               types.String `tfsdk:"store_path"`
 		From                    types.String `tfsdk:"from"`
 		To                      types.String `tfsdk:"to"`
@@ -27,15 +24,15 @@ type (
 	}
 )
 
-func newResourceCopyStorePath() resource.Resource { return new(copyStorePathResource) }
+func newResourceStorePathCopy() resource.Resource { return new(resourceStorePathCopy) }
 
-func (*copyStorePathResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_copy_store_path"
+func (*resourceStorePathCopy) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_store_path_copy"
 }
 
-func (*copyStorePathResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (*resourceStorePathCopy) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Copies store path closures between two Nix stores.",
+		Description: "Copy store path closures between two Nix stores.",
 		Attributes: map[string]schema.Attribute{
 			"store_path": schema.StringAttribute{
 				MarkdownDescription: "Store path to copy.",
@@ -66,7 +63,7 @@ func (*copyStorePathResource) Schema(_ context.Context, _ resource.SchemaRequest
 	}
 }
 
-func (r *copyStorePathResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *resourceStorePathCopy) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -74,7 +71,7 @@ func (r *copyStorePathResource) Configure(_ context.Context, req resource.Config
 	n, ok := req.ProviderData.(nix.Nix)
 	if !ok {
 		resp.Diagnostics.AddError(
-			"Unexpected Resource configure data type",
+			"Unexpected configure data type",
 			fmt.Sprintf("Expected nix implementation, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
@@ -83,7 +80,7 @@ func (r *copyStorePathResource) Configure(_ context.Context, req resource.Config
 	r.nix = n
 }
 
-func (r *copyStorePathResource) copyInstallable(ctx context.Context, model *copyStorePathResourceModel, diags *diag.Diagnostics) {
+func (r *resourceStorePathCopy) copyInstallable(ctx context.Context, model *resourceStorePathCopyModel, diags *diag.Diagnostics) {
 	if diags.HasError() {
 		return
 	}
@@ -91,7 +88,7 @@ func (r *copyStorePathResource) copyInstallable(ctx context.Context, model *copy
 	var sshOptions []string
 	diags.Append(model.SSHOptions.ElementsAs(ctx, &sshOptions, false)...)
 
-	if err := r.nix.Copy(ctx, nix.CopyRequest{
+	if err := r.nix.CopyStorePath(ctx, nix.CopyRequest{
 		Installable:             model.StorePath.ValueString(),
 		From:                    model.From.ValueStringPointer(),
 		To:                      model.To.ValueStringPointer(),
@@ -104,23 +101,37 @@ func (r *copyStorePathResource) copyInstallable(ctx context.Context, model *copy
 	}
 }
 
-func (r *copyStorePathResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var plan copyStorePathResourceModel
+func (r *resourceStorePathCopy) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var plan resourceStorePathCopyModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 
 	r.copyInstallable(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 }
 
-func (*copyStorePathResource) Read(context.Context, resource.ReadRequest, *resource.ReadResponse) {
+func (r *resourceStorePathCopy) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var state resourceStorePathCopyModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
+	r.copyInstallable(ctx, &state, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
-func (*copyStorePathResource) Update(context.Context, resource.UpdateRequest, *resource.UpdateResponse) {
+func (*resourceStorePathCopy) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
+	resp.Diagnostics.AddError("Update should not happen.", "Update does not really make this for this provider, don't know what to do.")
 }
 
-func (*copyStorePathResource) Delete(ctx context.Context, _ resource.DeleteRequest, _ *resource.DeleteResponse) {
-	tflog.Info(ctx, "Delete operation is a no-op for nix provider, use nix-collect-garbage if needed")
+func (*resourceStorePathCopy) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
+	resp.Diagnostics.AddWarning(
+		"Delete operation is no-op for this provider.",
+		"Delete operation may have consequences out of the scope of this plan. Use nix-collect-garbage on the remote store if needed.",
+	)
 }
