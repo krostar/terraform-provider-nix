@@ -505,7 +505,7 @@ Use the `nix_store_path` **resource** to do something in other module, like depl
 provider "nix" {}
 
 resource "nix_store_path" "awesome_host_vhd" {
-  installable = provider::nix::flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon")
+  installable = provider::nix::flake_nixos_configuration(path.module, "awesomeHost", "formats.amazon").installable
 }
 
 resource "aws_s3_bucket" "nixos_ami" {}
