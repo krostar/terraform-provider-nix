@@ -136,7 +136,7 @@ func (r *resourceStorePath) Read(ctx context.Context, req resource.ReadRequest, 
 
 func (r *resourceStorePath) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var state resourceStorePathModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &state)...)
 
 	if r.buildInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return

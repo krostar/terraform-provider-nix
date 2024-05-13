@@ -125,7 +125,7 @@ func (r *resourceStorePathCopy) Read(ctx context.Context, req resource.ReadReque
 
 func (r *resourceStorePathCopy) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var state resourceStorePathCopyModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &state)...)
 
 	if r.copyInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return
