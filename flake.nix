@@ -15,9 +15,21 @@
     });
   in {
     devShells = forEachSupportedSystems (system: let
-      pkgs = pkgsForSystem system {};
+      pkgs = pkgsForSystem system {
+        overlays = [
+          (final: prev: {
+            go_1_22 = prev.go_1_22.overrideAttrs (old: rec {
+              version = "1.22.3";
+              src = prev.fetchurl {
+                url = "https://go.dev/dl/go${version}.src.tar.gz";
+                hash = "sha256-gGSO80+QMZPXKlnA3/AZ9fmK4MmqE63gsOy/+ZGnb2g=";
+              };
+            });
+          })
+        ];
+      };
     in {
-      default = pkgs.mkShellNoCC {
+      default = pkgs.mkShell {
         nativeBuildInputs = with pkgs; [
           act
           alejandra
@@ -37,9 +49,6 @@
           tflint
           yamllint
         ];
-        shellHook = ''
-          export CGO_ENABLED=0
-        '';
       };
     });
     formatter = forEachSupportedSystems (system: let pkgs = pkgsForSystem system {}; in pkgs.alejandra);

@@ -50,7 +50,7 @@ linters-settings:
     period: true
     scope: "toplevel"
   gomnd:
-    ignored-numbers: ["10", "32", "64", "128"]
+    ignored-numbers: ["2", "10", "32", "64", "128"]
   gofumpt:
     extra-rules: true
   govet:
