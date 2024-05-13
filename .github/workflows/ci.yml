@@ -62,10 +62,10 @@ jobs:
       - name: "Setup shell"
         run: "nix develop --command true"
       - name: "Generate documentation"
-        run: "go generate ./..."
+        run: "nix develop --command go generate ."
       - name: "git diff"
         run: |
-          git diff --compact-summary --exit-code || \
+          nix develop --command git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
 
 
