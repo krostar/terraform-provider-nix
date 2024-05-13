@@ -95,8 +95,7 @@ func (r *resourceStorePath) Create(ctx context.Context, req resource.CreateReque
 	var plan resourceStorePathModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 
-	r.buildInstallable(ctx, &plan, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
+	if r.buildInstallable(ctx, &plan, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -128,16 +127,22 @@ func (r *resourceStorePath) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	// otherwise, rebuild it
-	r.buildInstallable(ctx, &state, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
+	if r.buildInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func (*resourceStorePath) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update should not happen.", "Update does not really make this for this provider, don't know what to do.")
+func (r *resourceStorePath) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var state resourceStorePathModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
+	if r.buildInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (*resourceStorePath) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {

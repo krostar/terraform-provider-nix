@@ -105,8 +105,7 @@ func (r *resourceStorePathCopy) Create(ctx context.Context, req resource.CreateR
 	var plan resourceStorePathCopyModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 
-	r.copyInstallable(ctx, &plan, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
+	if r.copyInstallable(ctx, &plan, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return
 	}
 
@@ -117,16 +116,22 @@ func (r *resourceStorePathCopy) Read(ctx context.Context, req resource.ReadReque
 	var state resourceStorePathCopyModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 
-	r.copyInstallable(ctx, &state, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
+	if r.copyInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
 		return
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
-func (*resourceStorePathCopy) Update(_ context.Context, _ resource.UpdateRequest, resp *resource.UpdateResponse) {
-	resp.Diagnostics.AddError("Update should not happen.", "Update does not really make this for this provider, don't know what to do.")
+func (r *resourceStorePathCopy) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var state resourceStorePathCopyModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+
+	if r.copyInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
 }
 
 func (*resourceStorePathCopy) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
