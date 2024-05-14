@@ -7,6 +7,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/krostar/terraform-provider-nix/internal/nix"
@@ -37,6 +39,7 @@ func (*resourceStorePathCopy) Schema(_ context.Context, _ resource.SchemaRequest
 			"store_path": schema.StringAttribute{
 				MarkdownDescription: "Store path to copy.",
 				Required:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"from": schema.StringAttribute{
 				MarkdownDescription: "URL of the source Nix store (see [nix stores](https://nixos.org/manual/nix/stable/command-ref/new-cli/nix3-help-stores) for possible values).",
@@ -45,6 +48,7 @@ func (*resourceStorePathCopy) Schema(_ context.Context, _ resource.SchemaRequest
 			"to": schema.StringAttribute{
 				MarkdownDescription: "URL of the destination Nix store (see [nix stores](https://nixos.org/manual/nix/stable/command-ref/new-cli/nix3-help-stores) for possible values).",
 				Required:            true,
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"check_sigs": schema.BoolAttribute{
 				MarkdownDescription: "Whenever paths should be signed by trusted keys.",
