@@ -8,6 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/krostar/terraform-provider-nix/internal/nix"
 )
@@ -106,30 +107,40 @@ func (r *resourceStorePath) Read(ctx context.Context, req resource.ReadRequest, 
 	var state resourceStorePathModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 
-	{ // check if installable exists
-		exists, storePath, err := r.nix.GetStorePath(ctx, state.Installable.ValueString())
-		if err != nil {
-			resp.Diagnostics.AddError("Unable to get build info", err.Error())
-			return
-		}
-		if exists {
-			derivation, err := r.nix.DescribeDerivation(ctx, storePath.Derivation)
-			if err != nil {
-				resp.Diagnostics.AddError("Unable to describe derivation", err.Error())
-				return
-			}
-
-			state.Derivation = types.StringValue(storePath.Derivation)
-			state.Output = types.StringValue(storePath.Output)
-			state.System = types.StringValue(derivation.System)
-			resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
-		}
-	}
-
-	// otherwise, rebuild it
-	if r.buildInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
+	derivation, err := r.nix.DescribeDerivation(ctx, state.Installable.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to describe derivation", err.Error())
 		return
 	}
+
+	wp, ctx := errgroup.WithContext(ctx)
+	drvExists, outputExists := false, false
+
+	wp.Go(func() error {
+		var err error
+		drvExists, _, err = r.nix.GetStorePath(ctx, derivation.Path.Derivation)
+		return err
+	})
+
+	wp.Go(func() error {
+		var err error
+		outputExists, _, err = r.nix.GetStorePath(ctx, derivation.Path.Output)
+		return err
+	})
+
+	if err := wp.Wait(); err != nil {
+		resp.Diagnostics.AddError("Unable to get build info", err.Error())
+		return
+	}
+
+	if exists := drvExists && outputExists; !exists {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
+	state.Derivation = types.StringValue(derivation.Path.Derivation)
+	state.Output = types.StringValue(derivation.Path.Output)
+	state.System = types.StringValue(derivation.System)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -147,7 +158,7 @@ func (r *resourceStorePath) Update(ctx context.Context, req resource.UpdateReque
 
 func (*resourceStorePath) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
 	resp.Diagnostics.AddWarning(
-		"Delete operation is no-op for this provider.",
+		"Delete operation is a no-op for the nix provider.",
 		"Delete operation may have consequences out of the scope of this plan. Use nix-collect-garbage if needed.",
 	)
 }

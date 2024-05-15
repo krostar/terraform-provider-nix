@@ -118,9 +118,25 @@ func (r *resourceStorePathCopy) Create(ctx context.Context, req resource.CreateR
 
 func (r *resourceStorePathCopy) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state resourceStorePathCopyModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.Append(req.State.Get(ctx, &state)...); resp.Diagnostics.HasError() {
+		return
+	}
 
-	if r.copyInstallable(ctx, &state, &resp.Diagnostics); resp.Diagnostics.HasError() {
+	var sshOptions []string
+	resp.Diagnostics.Append(state.SSHOptions.ElementsAs(ctx, &sshOptions, false)...)
+
+	exists, err := r.nix.RemoteStorePathExists(ctx, nix.RemoteStorePathExistsRequest{
+		Installable: state.StorePath.ValueString(),
+		Store:       state.To.ValueString(),
+		SSHOptions:  sshOptions,
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to check if remote store path exists", err.Error())
+		return
+	}
+
+	if !exists {
+		resp.State.RemoveResource(ctx)
 		return
 	}
 
@@ -140,7 +156,7 @@ func (r *resourceStorePathCopy) Update(ctx context.Context, req resource.UpdateR
 
 func (*resourceStorePathCopy) Delete(_ context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
 	resp.Diagnostics.AddWarning(
-		"Delete operation is no-op for this provider.",
+		"Delete operation is a no-op for the nix provider.",
 		"Delete operation may have consequences out of the scope of this plan. Use nix-collect-garbage on the remote store if needed.",
 	)
 }

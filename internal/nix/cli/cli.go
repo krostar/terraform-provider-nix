@@ -13,15 +13,14 @@ import (
 	"github.com/krostar/terraform-provider-nix/internal/nix"
 )
 
-// CLI is a nix implementation using the nix command line interface.
-type CLI struct{}
+type cli struct{}
 
 // New creates a new nix implementation backed by the nix command line interface.
-func New() *CLI {
-	return &CLI{}
+func New() nix.Nix {
+	return new(cli)
 }
 
-func (CLI) runNixCmd(ctx context.Context, additionalEnv []string, subcommand string, args ...string) (io.Reader, error) {
+func (cli) runNixCmd(ctx context.Context, additionalEnv []string, subcommand string, args ...string) (io.Reader, error) {
 	command := strings.Join(append([]string{
 		"nix",
 		subcommand,
@@ -43,14 +42,13 @@ func (CLI) runNixCmd(ctx context.Context, additionalEnv []string, subcommand str
 	return &stdOut, nil
 }
 
-// EvaluateExpression evaluates nix expression and returns a json message.
-func (s CLI) EvaluateExpression(ctx context.Context, req nix.EvaluateRequest) (json.RawMessage, error) {
+func (c cli) EvaluateExpression(ctx context.Context, req nix.EvaluateRequest) (json.RawMessage, error) {
 	args := []string{req.Installable, "--json"}
 	if req.Apply != nil {
 		args = append(args, "--apply "+*req.Apply)
 	}
 
-	raw, err := s.runNixCmd(ctx, nil, "eval", args...)
+	raw, err := c.runNixCmd(ctx, nil, "eval", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,9 +61,8 @@ func (s CLI) EvaluateExpression(ctx context.Context, req nix.EvaluateRequest) (j
 	return msg, nil
 }
 
-// Build builds a nix installable using "nix build", and returns the associated store path.
-func (s CLI) Build(ctx context.Context, installable string) (*nix.StorePath, error) {
-	stdout, err := s.runNixCmd(ctx, nil, "build", "--no-link", "--json", installable)
+func (c cli) Build(ctx context.Context, installable string) (*nix.StorePath, error) {
+	stdout, err := c.runNixCmd(ctx, nil, "build", "--no-link", "--json", installable)
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +90,8 @@ func (s CLI) Build(ctx context.Context, installable string) (*nix.StorePath, err
 	}, nil
 }
 
-// DescribeDerivation returns the derivation store path based on an installable, using "nix derivation show" command.
-func (s CLI) DescribeDerivation(ctx context.Context, installable string) (*nix.Derivation, error) {
-	stdout, err := s.runNixCmd(ctx, nil, "derivation show", installable)
+func (c cli) DescribeDerivation(ctx context.Context, installable string) (*nix.Derivation, error) {
+	stdout, err := c.runNixCmd(ctx, nil, "derivation show", installable)
 	if err != nil {
 		return nil, err
 	}
@@ -132,10 +128,8 @@ func (s CLI) DescribeDerivation(ctx context.Context, installable string) (*nix.D
 	}, nil
 }
 
-// GetStorePath uses the "nix path-info" command to check nix store paths.
-// It returns true if the store paths are built.
-func (s CLI) GetStorePath(ctx context.Context, installable string) (bool, *nix.StorePath, error) {
-	stdout, err := s.runNixCmd(ctx, nil, "path-info", "--json", installable)
+func (c cli) GetStorePath(ctx context.Context, installable string) (bool, *nix.StorePath, error) {
+	stdout, err := c.runNixCmd(ctx, nil, "path-info", "--json", installable)
 	if err != nil {
 		return false, nil, err
 	}
@@ -161,8 +155,7 @@ func (s CLI) GetStorePath(ctx context.Context, installable string) (bool, *nix.S
 	}, nil
 }
 
-// CopyStorePath copies the provided nix store path from the provided nix store to the provided nix store.
-func (s CLI) CopyStorePath(ctx context.Context, req nix.CopyRequest) error {
+func (c cli) CopyStorePath(ctx context.Context, req nix.CopyRequest) error {
 	args := []string{req.Installable}
 	if req.From != nil {
 		args = append(args, "--from "+*req.From)
@@ -182,6 +175,29 @@ func (s CLI) CopyStorePath(ctx context.Context, req nix.CopyRequest) error {
 		env = []string{"NIX_SSHOPTS=" + strings.Join(req.SSHOptions, " ")}
 	}
 
-	_, err := s.runNixCmd(ctx, env, "copy", args...)
+	_, err := c.runNixCmd(ctx, env, "copy", args...)
 	return err
+}
+
+func (c cli) RemoteStorePathExists(ctx context.Context, req nix.RemoteStorePathExistsRequest) (bool, error) {
+	args := []string{
+		"--offline",
+		"--from " + req.Store,
+		"--to " + req.Store,
+		req.Installable,
+	}
+
+	var env []string
+	if len(req.SSHOptions) > 0 {
+		env = []string{"NIX_SSHOPTS=" + strings.Join(req.SSHOptions, " ")}
+	}
+
+	switch _, err := c.runNixCmd(ctx, env, "copy", args...); { // this can never work
+	case err == nil:
+		return true, nil
+	case strings.Contains(err.Error(), "is required, but there is no substituter that can build it"):
+		return false, nil
+	default:
+		return false, err
+	}
 }

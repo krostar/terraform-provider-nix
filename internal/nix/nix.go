@@ -21,6 +21,9 @@ type Nix interface {
 
 	// CopyStorePath copies store path closures between two Nix stores.
 	CopyStorePath(ctx context.Context, req CopyRequest) error
+
+	// RemoteStorePathExists checks whether a nix store path exists.
+	RemoteStorePathExists(ctx context.Context, req RemoteStorePathExistsRequest) (bool, error)
 }
 
 // StorePath defines the path on the filesystem, usually on /nix/store, of the derivation and its outputs.
@@ -42,7 +45,7 @@ type EvaluateRequest struct {
 	Apply       *string
 }
 
-// CopyRequest is the input parameter provided to the Copy method of the Nix interface.
+// CopyRequest is the input parameter provided to the CopyStorePath method of the Nix interface.
 type CopyRequest struct {
 	Installable             string
 	From                    *string
@@ -50,4 +53,11 @@ type CopyRequest struct {
 	CheckSignature          *bool
 	SubstituteOnDestination *bool
 	SSHOptions              []string
+}
+
+// RemoteStorePathExistsRequest is the input parameter provided to the RemoteStorePathExists method of the Nix interface.
+type RemoteStorePathExistsRequest struct {
+	Installable string
+	Store       string
+	SSHOptions  []string
 }

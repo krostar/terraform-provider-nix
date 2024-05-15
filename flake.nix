@@ -17,8 +17,8 @@
     devShells = forEachSupportedSystems (system: let
       pkgs = pkgsForSystem system {
         overlays = [
-          (final: prev: {
-            go_1_22 = prev.go_1_22.overrideAttrs (old: rec {
+          (_: prev: {
+            go_1_22 = prev.go_1_22.overrideAttrs (_: rec {
               version = "1.22.3";
               src = prev.fetchurl {
                 url = "https://go.dev/dl/go${version}.src.tar.gz";
