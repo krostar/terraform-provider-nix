@@ -16,7 +16,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v4.1.4"
-      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/install-nix-action@V27"
       - uses: "cachix/cachix-action@v14"
         with:
           name: "krostar"
@@ -34,7 +34,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v4.1.4"
-      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/install-nix-action@V27"
       - uses: "cachix/cachix-action@v14"
         with:
           name: "krostar"
@@ -54,7 +54,7 @@ jobs:
     runs-on: "ubuntu-latest"
     steps:
       - uses: "actions/checkout@v4.1.4"
-      - uses: "cachix/install-nix-action@v26"
+      - uses: "cachix/install-nix-action@V27"
       - uses: "cachix/cachix-action@v14"
         with:
           name: "krostar"
